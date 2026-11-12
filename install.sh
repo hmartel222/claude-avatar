@@ -1,7 +1,7 @@
 #!/bin/bash
-# One-line installer:  curl -fsSL https://raw.githubusercontent.com/OWNER/claude-avatar/main/install.sh | bash
+# One-line installer:  curl -fsSL https://raw.githubusercontent.com/hmartel222/claude-avatar/main/install.sh | bash
 set -euo pipefail
-REPO_URL="${CLAUDE_AVATAR_REPO:-https://github.com/OWNER/claude-avatar.git}"
+REPO_URL="${CLAUDE_AVATAR_REPO:-https://github.com/hmartel222/claude-avatar.git}"
 DEST="${CLAUDE_AVATAR_HOME:-$HOME/.claude-avatar}"
 
 [ "$(uname)" = Darwin ] || { echo "macOS only." >&2; exit 1; }
