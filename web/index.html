@@ -218,8 +218,7 @@ try {
     v.muted = true; v.playsInline = true; v.srcObject = cv.captureStream(30);
     document.getElementById("avatar").append(v); await v.play();
     cv.style.visibility = "hidden";
-    stage.attachVideo(v).catch((e) => console.error("cutout unavailable", e));
-    stage.attachHead(renderer.head);
+    stage.attachVideo(v).catch((e) => console.error("cutout unavailable", e));   // default 3D lights: isolates the overlay
   } else if (renderer.head) stage.attachHead(renderer.head);
   else if (renderer.video) stage.attachVideo(renderer.video).catch((e) => console.error("cutout unavailable", e));
 } catch (e) {

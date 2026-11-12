@@ -20,19 +20,37 @@ const KEYFRAMES = [
   [24,   { tint: [20, 30, 80, .40],   bright: .46, sat: .8, win: [30, 45, 105, .78],    lamp: 1,   key: [150, 175, 255], keyI: 22, amb: [150, 165, 235], ambI: 1.25, theta: 2.0, vig: .55, faceTint: [90, 120, 255, .06], faceBright: 1.0 }],
 ];
 
+// ---- face light rig -----------------------------------------------------------
+// One light story per time of day, shared by both renderers.
+//   dir   -1 = from screen left (the window) .. +1 = from the right (the lamp)
+//   elev  0 = level with the face .. 1 = straight overhead
+//   key   colour of the main source, k its strength; shadow/shadowCol shape the far side
+//   fill  colour of the weaker second source (dusk sky, monitor glow), fillK its strength
+const LIGHT_NIGHT   = { dir: .85, elev: .15, key: [255, 168, 98],  k: .60, shadow: .42, shadowCol: [20, 26, 66],  fill: [110, 150, 255], fillK: .30, fillElev: -.5, flicker: .02 };
+const LIGHT_DAWN    = { dir: -.85, elev: .2, key: [255, 190, 140], k: .50, shadow: .26, shadowCol: [60, 48, 80],  fill: [190, 200, 255], fillK: .12, fillElev: 0,   flicker: 0 };
+const LIGHT_MORNING = { dir: -.85, elev: .25, key: [255, 238, 215], k: .60, shadow: .24, shadowCol: [66, 68, 96], fill: [200, 215, 255], fillK: .12, fillElev: 0,   flicker: 0 };
+const LIGHT_NOON    = { dir: -.25, elev: .75, key: [255, 252, 245], k: .50, shadow: .26, shadowCol: [72, 68, 84], fill: [210, 220, 255], fillK: .10, fillElev: 0,   flicker: 0 };
+const LIGHT_GOLDEN  = { dir: -.9,  elev: .1,  key: [255, 188, 118], k: .75, shadow: .32, shadowCol: [66, 38, 48], fill: [200, 190, 255], fillK: .10, fillElev: 0,   flicker: 0 };
+const LIGHT_EVENING = { dir: .85,  elev: .3,  key: [255, 172, 102], k: .65, shadow: .34, shadowCol: [42, 28, 60], fill: [140, 150, 255], fillK: .22, fillElev: 0,   flicker: .015 };
+const LIGHT_KEYS = [[0, LIGHT_NIGHT], [5, LIGHT_NIGHT], [6.5, LIGHT_DAWN], [9, LIGHT_MORNING], [13, LIGHT_NOON],
+                    [17, LIGHT_GOLDEN], [19.5, LIGHT_EVENING], [21.5, LIGHT_NIGHT], [24, LIGHT_NIGHT]];
+
 const lerp = (a, b, t) => a + (b - a) * t;
 function mix(a, b, t) {
   if (Array.isArray(a)) return a.map((v, i) => lerp(v, b[i], t));
   return lerp(a, b, t);
 }
-export function profileAt(hour) {
+function blend(table, hour) {
   let i = 0;
-  while (i < KEYFRAMES.length - 2 && hour >= KEYFRAMES[i + 1][0]) i++;
-  const [h0, p0] = KEYFRAMES[i], [h1, p1] = KEYFRAMES[i + 1];
+  while (i < table.length - 2 && hour >= table[i + 1][0]) i++;
+  const [h0, p0] = table[i], [h1, p1] = table[i + 1];
   const t = Math.min(1, Math.max(0, (hour - h0) / (h1 - h0)));
   const out = {};
   for (const k of Object.keys(p0)) out[k] = mix(p0[k], p1[k], t);
   return out;
+}
+export function profileAt(hour) {
+  return { ...blend(KEYFRAMES, hour), light: blend(LIGHT_KEYS, hour) };
 }
 export function periodName(hour) {
   return hour < 6 ? "night" : hour < 11.5 ? "morning" : hour < 17 ? "afternoon" : hour < 20.5 ? "evening" : "night";
@@ -105,7 +123,7 @@ export class Stage {
 
   /** Cuts the person out of Simli's video and draws them over the room. */
   async attachVideo(video) {
-    this.cutout = new Cutout(this.avatar, video, () => this.profile);
+    this.cutout = new Cutout(this.avatar, video, () => (this.light ? this.profile : null));
     this.cutout.enabled = this.room;
     this.apply();
     await this.cutout.init();
@@ -141,13 +159,16 @@ export class Stage {
                               lightDirectIntensity: 30, lightDirectPhi: 1, lightDirectTheta: 2 });
       return;
     }
+    const L = p.light;
     this.head.setLighting({
-      lightAmbientColor: hex(p.amb), lightAmbientIntensity: p.ambI,
-      lightDirectColor: hex(p.key), lightDirectIntensity: p.keyI,
-      lightDirectPhi: 0.9, lightDirectTheta: p.theta,
+      lightAmbientColor: hex(p.amb), lightAmbientIntensity: (1 - L.shadow) * 1.2,
+      lightDirectColor: hex(L.key), lightDirectIntensity: 10 + 18 * L.k,
+      lightDirectPhi: lerp(1.35, .45, Math.max(0, L.elev)), lightDirectTheta: L.dir * 1.2,
+      lightSpotColor: hex(L.fill), lightSpotIntensity: L.fillK * 20,
+      lightSpotPhi: 1.2, lightSpotTheta: -L.dir * 1.0, lightSpotDispersion: 1,
     });
     const c = this.head.renderer?.domElement;
-    if (c) c.style.filter = `contrast(1.04) saturate(1.04) brightness(${p.faceBright.toFixed(3)})`;
+    if (c) c.style.filter = "contrast(1.05) saturate(1.04)";
   }
 }
 
@@ -228,18 +249,68 @@ class Cutout {
     g.drawImage(this.maskCanvas, cx / sw * mw, cy / sh * mh, cw / sw * mw, ch / sh * mh, 0, 0, W, H);
     g.filter = "none";
 
-    // Zoom-style lighting on the person only (source-atop keeps it off the transparent background).
+    // Light from a real-feeling source (window, lamp, overhead) on the person only:
+    // source-atop keeps every layer off the transparent background.
     const p = this.getProfile?.();
-    if (p) {
-      g.globalCompositeOperation = "source-atop";
-      g.fillStyle = rgba(p.faceTint); g.fillRect(0, 0, W, H);
-      const left = p.theta < 2.5;   // key from the left (window) or the right (lamp)
-      const grad = g.createLinearGradient(left ? 0 : W, 0, left ? W : 0, 0);
-      grad.addColorStop(0, "rgba(255,255,255,.10)"); grad.addColorStop(1, "rgba(0,0,0,.16)");
-      g.fillStyle = grad; g.fillRect(0, 0, W, H);
-      if (p.faceBright < 1) { g.fillStyle = `rgba(0,0,0,${(1 - p.faceBright).toFixed(3)})`; g.fillRect(0, 0, W, H); }
-      g.globalCompositeOperation = "source-over";
+    if (p) this.paintLight(g, W, H, p.light, now);
+  }
+
+  paintLight(g, W, H, L, now) {
+    const flick = 1 + L.flicker * (Math.sin(now / 700) + .5 * Math.sin(now / 230));
+    const k = L.k * flick;
+    const c = (col, a) => `rgba(${col[0] | 0},${col[1] | 0},${col[2] | 0},${Math.max(0, Math.min(1, a)).toFixed(3)})`;
+    const sd = L.dir < 0 ? -1 : 1;                        // -1: lit from the left, +1: from the right
+    const cx = W * .5;
+    const fx = (u) => cx + sd * u * W;                    // u<0 toward the light, u>0 away from it
+    g.globalCompositeOperation = "source-atop";
+
+    // 1. falloff across the face: lit cheek -> shadowed cheek (face spans roughly +-0.15 W)
+    let gr = g.createLinearGradient(fx(-.17), 0, fx(.17), 0);
+    gr.addColorStop(0, c(L.shadowCol, 0));
+    gr.addColorStop(1, c(L.shadowCol, L.shadow * 1.6));
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+
+    // 2. overhead light: forehead bright, under the chin and neck dark
+    if (L.elev > .05) {
+      gr = g.createLinearGradient(0, 0, 0, H);
+      gr.addColorStop(0, c(L.shadowCol, 0));
+      gr.addColorStop(.35, c(L.shadowCol, 0));
+      gr.addColorStop(1, c(L.shadowCol, L.shadow * L.elev * 1.1));
+      g.fillStyle = gr; g.fillRect(0, 0, W, H);
     }
+
+    // 3. the key source's glow, centred toward the lamp/window
+    const sx = fx(-.32), sy = H * (.42 - L.elev * .3);
+    gr = g.createRadialGradient(sx, sy, 0, sx, sy, W * .5);
+    gr.addColorStop(0, c(L.key, k * .5));
+    gr.addColorStop(1, c(L.key, 0));
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+
+    // 4. skin sheen on the lit cheek / forehead
+    const hx = fx(-.05), hy = H * (.38 - L.elev * .06);
+    gr = g.createRadialGradient(hx, hy, 0, hx, hy, W * .14);
+    gr.addColorStop(0, c([255, 250, 240], k * .22));
+    gr.addColorStop(1, c([255, 250, 240], 0));
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+
+    // 5. rim light along the edge of the head nearest the source
+    gr = g.createLinearGradient(fx(-.15), 0, fx(-.07), 0);
+    gr.addColorStop(0, c(L.key, k * .4));
+    gr.addColorStop(1, c(L.key, 0));
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+
+    // 6. second, weaker source: monitor glow from below at night, sky bounce on the shadow side otherwise
+    if (L.fillElev < 0) {
+      gr = g.createLinearGradient(0, H, 0, H * .5);
+      gr.addColorStop(0, c(L.fill, L.fillK * .35));
+      gr.addColorStop(1, c(L.fill, 0));
+    } else {
+      gr = g.createLinearGradient(fx(.2), 0, fx(.06), 0);
+      gr.addColorStop(0, c(L.fill, L.fillK * .7));
+      gr.addColorStop(1, c(L.fill, 0));
+    }
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = "source-over";
   }
 
   /** Mask → alpha canvas, with orientation check, edge contrast and temporal smoothing. */
