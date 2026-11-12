@@ -32,6 +32,10 @@ final class AppState: ObservableObject {
     @Published var isVisible = true
     @Published var faceHidden: Bool { didSet { defaults.set(faceHidden, forKey: "faceHidden"); applyPause() } }
     @Published var pinned: Bool { didSet { defaults.set(pinned, forKey: "pinned"); window?.level = pinned ? .floating : .normal } }
+    /// Keep the tile hidden until Claude's audio starts, then hide it again after a quiet spell.
+    @Published var autoShow: Bool {
+        didSet { defaults.set(autoShow, forKey: "autoShow") }
+    }
     @Published var sensitivity: Double {
         didSet { defaults.set(sensitivity, forKey: "sensitivity"); model.eval("window.claudeAvatar?.setSensitivity(\(sensitivity))") }
     }
@@ -73,6 +77,11 @@ final class AppState: ObservableObject {
     private var hotKeyRef: EventHotKeyRef?
     private let loudLock = NSLock()
     private var lastLoud = Date.distantPast
+    /// True while the tile is visible because auto-show opened it (only those get auto-hidden).
+    private var autoShown = false
+    /// Set when the user hides the tile mid-session; auto-show stays off until Claude goes quiet.
+    private var suppressAuto = false
+    private static let autoHideAfter: TimeInterval = 25
 
     private let userAvatarsDir: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -82,6 +91,7 @@ final class AppState: ObservableObject {
     private init() {
         let d = UserDefaults.standard
         faceHidden = d.bool(forKey: "faceHidden")
+        autoShow = d.object(forKey: "autoShow") as? Bool ?? true
         pinned = d.object(forKey: "pinned") as? Bool ?? true
         let s = d.double(forKey: "sensitivity")
         sensitivity = s == 0 ? 1.0 : s
@@ -180,6 +190,11 @@ final class AppState: ObservableObject {
             return
         }
         try? FileManager.default.createDirectory(at: userAvatarsDir, withIntermediateDirectories: true)
+        // First run: start at login so the tile can pop up on its own (toggle in the menu-bar panel).
+        if !defaults.bool(forKey: "loginItemOffered") {
+            defaults.set(true, forKey: "loginItemOffered")
+            setLaunchAtLogin(true)
+        }
         makeWindow()
         startEngine()
         startWebServer()
@@ -201,8 +216,16 @@ final class AppState: ObservableObject {
 
     func toggleWindow() {
         guard let window else { return }
-        if window.isVisible { window.orderOut(nil) } else { window.orderFrontRegardless() }
+        if window.isVisible { window.orderOut(nil); suppressAuto = autoShow } else { window.orderFrontRegardless() }
+        autoShown = false
         isVisible = window.isVisible
+        applyPause()
+    }
+
+    private func setWindowVisible(_ show: Bool) {
+        guard let window, window.isVisible != show else { return }
+        if show { window.orderFrontRegardless() } else { window.orderOut(nil) }
+        isVisible = show
         applyPause()
     }
 
@@ -273,8 +296,9 @@ final class AppState: ObservableObject {
 
         if !w.setFrameUsingName("ClaudeAvatarTile") { w.center() }
         w.setFrameAutosaveName("ClaudeAvatarTile")
-        w.orderFrontRegardless()
+        if !autoShow { w.orderFrontRegardless() }
         window = w
+        isVisible = !autoShow
 
         NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: w, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.syncSizeIndex() }
@@ -309,6 +333,15 @@ final class AppState: ObservableObject {
         loudLock.lock(); let last = lastLoud; loudLock.unlock()
         let speaking = Date().timeIntervalSince(last) < 0.4
         if speaking != model.speaking { model.speaking = speaking }
+        guard autoShow else { autoShown = false; return }
+        let quiet = Date().timeIntervalSince(last)
+        if speaking, !suppressAuto, window?.isVisible == false {
+            setWindowVisible(true); autoShown = true
+        }
+        if quiet > Self.autoHideAfter {
+            suppressAuto = false
+            if autoShown { setWindowVisible(false); autoShown = false }
+        }
     }
 
     private func startWebServer() {

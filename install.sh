@@ -20,6 +20,7 @@ else
 fi
 
 ./build-app.sh
+pkill -x ClaudeAvatar 2>/dev/null && sleep 1 || true   # replace a running older copy
 mkdir -p "$HOME/Applications"
 rm -rf "$HOME/Applications/ClaudeAvatar.app"
 cp -R dist/ClaudeAvatar.app "$HOME/Applications/"
@@ -27,22 +28,27 @@ open "$HOME/Applications/ClaudeAvatar.app"
 
 cat <<'GUIDE'
 
-  ✅ Claude Avatar is installed and launching.
+  ✅ Claude Avatar is installed and running (look for the person icon in your menu bar).
 
-  HOW TO USE
-    1. Put headphones on (otherwise the mic hears Claude and it interrupts itself).
-    2. Open the Claude desktop app and start voice mode.
-    3. The avatar tile floats on top of your windows; its face moves when Claude speaks.
-    4. First launch: macOS asks for audio capture permission. Click Allow
-       (System Settings > Privacy & Security > Screen & System Audio Recording).
+  HOW IT WORKS
+    The tile pops up by itself when Claude starts speaking, and tucks away
+    after ~25 seconds of quiet. Just start voice mode in the Claude desktop app.
+      1. Put headphones on (otherwise the mic hears Claude and it interrupts itself).
+      2. Start voice mode in the Claude desktop app.
+      3. First time only: allow audio capture when macOS asks
+         (System Settings > Privacy & Security > Screen & System Audio Recording).
 
-  REOPEN IT LATER
+  IT STARTS AT LOGIN
+    So the pop-up works without you launching anything. Turn it off in the
+    menu-bar panel ("Launch at login"). Same panel: "Pop up when Claude speaks".
+
+  OPEN IT MANUALLY
     open ~/Applications/ClaudeAvatar.app        (or Spotlight: "ClaudeAvatar")
-    Hotkey to show/hide the tile: Option+Command+A
+    Show/hide the tile any time: Option+Command+A
 
   UPDATE
     Re-run the same install line.
 
-  Optional: photoreal face via Simli. Add your own Simli API key in the app's settings.
+  Optional: photoreal face via Simli. Add your own Simli API key in the menu-bar panel.
 
 GUIDE

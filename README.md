@@ -18,7 +18,7 @@ Reopen later with `open ~/Applications/ClaudeAvatar.app`.
 
 1. Put headphones on, otherwise the mic picks up Claude's voice and it interrupts itself.
 2. Start voice mode in the Claude desktop app.
-3. Launch the avatar. The face moves when Claude speaks.
+3. The tile pops up by itself when Claude starts speaking and hides after ~25 s of quiet. The app lives in the menu bar and starts at login (both can be turned off in its panel). Show/hide manually with ⌥⌘A.
 4. First launch only: approve **System Audio Recording** in System Settings → Privacy & Security.
 
 The optional photoreal Simli renderer needs your own Simli API key, entered in the app and stored in your Keychain.

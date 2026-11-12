@@ -247,6 +247,7 @@ struct MenuPanel: View {
             } }
 
             Toggle("Always on top", isOn: $app.pinned)
+            Toggle("Pop up when Claude speaks", isOn: $app.autoShow)
             Toggle("Launch at login", isOn: Binding(get: { app.launchAtLogin }, set: { app.setLaunchAtLogin($0) }))
             if let note = app.loginNote { Text(note).font(.caption).foregroundStyle(.secondary) }
 
