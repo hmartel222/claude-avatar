@@ -10,8 +10,9 @@ if [ "$major" -lt 14 ] || { [ "$major" -eq 14 ] && [ "$minor" -lt 2 ]; }; then e
 command -v swift >/dev/null || { echo "Install Xcode Command Line Tools first: xcode-select --install" >&2; exit 1; }
 command -v node  >/dev/null || { echo "Install Node.js first: brew install node" >&2; exit 1; }
 
-if [ -f "$(dirname "$0")/Package.swift" ] 2>/dev/null; then
-  cd "$(dirname "$0")"
+SELF="${BASH_SOURCE[0]:-}"
+if [ -n "$SELF" ] && [ -f "$SELF" ] && [ -f "$(dirname "$SELF")/Package.swift" ]; then
+  cd "$(dirname "$SELF")"
 elif [ -d "$DEST/.git" ]; then
   git -C "$DEST" pull --ff-only; cd "$DEST"
 else
