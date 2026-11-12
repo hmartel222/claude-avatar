@@ -35,6 +35,19 @@
 } }
 </script>
 
+<script>
+// ?debug=1 prints page errors on screen (the tile has no dev console).
+if (new URLSearchParams(location.search).has("debug")) {
+  const box = document.createElement("pre");
+  box.style.cssText = "position:fixed;left:6px;bottom:40px;right:6px;z-index:99;margin:0;font:10px monospace;color:#ff9;white-space:pre-wrap;pointer-events:none";
+  document.addEventListener("DOMContentLoaded", () => document.body.append(box));
+  const add = (t) => { box.textContent = (box.textContent + "\n" + t).slice(-900); };
+  addEventListener("error", (e) => add("ERR " + e.message));
+  addEventListener("unhandledrejection", (e) => add("REJ " + (e.reason?.message || e.reason)));
+  for (const k of ["error", "warn"]) { const o = console[k]; console[k] = (...a) => { add(k + ": " + a.join(" ")); o(...a); }; }
+  window.__dbg = add;
+}
+</script>
 <script type="module">
 const params = new URLSearchParams(location.search);
 const WS_URL = params.get("ws") || "ws://127.0.0.1:8765";
@@ -179,6 +192,8 @@ const post = (name, body) => window.webkit?.messageHandlers?.[name]?.postMessage
 
 // ---- boot -----------------------------------------------------------------
 // Renderer picked by the native shell: ?renderer=talkinghead (default) | simli
+const { Stage } = await import("/stage.js");
+const stage = new Stage({ avatar: document.getElementById("avatar"), params });
 let tokenWaiter = null;
 let renderer;
 if (params.get("renderer") === "simli") {
@@ -196,6 +211,17 @@ renderStatus();
 try {
   await renderer.init(document.getElementById("avatar"));
   document.getElementById("loading").remove();
+  if (params.has("segtest") && renderer.head) {
+    // Dev hook: feed the 3D avatar through the Simli cutout pipeline as a stand-in person video.
+    const cv = renderer.head.renderer.domElement;
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.srcObject = cv.captureStream(30);
+    document.getElementById("avatar").append(v); await v.play();
+    cv.style.visibility = "hidden";
+    stage.attachVideo(v).catch((e) => console.error("cutout unavailable", e));
+    stage.attachHead(renderer.head);
+  } else if (renderer.head) stage.attachHead(renderer.head);
+  else if (renderer.video) stage.attachVideo(renderer.video).catch((e) => console.error("cutout unavailable", e));
 } catch (e) {
   console.error(e);
   document.getElementById("loading").textContent = "Failed to load avatar: " + (e?.message || e);
@@ -205,7 +231,8 @@ try {
 // Hooks for the native shell (WKWebView).
 window.claudeAvatar = {
   setSensitivity: (x) => renderer.setSensitivity(x),
-  setPaused: (p) => renderer.setPaused(!!p),
+  setPaused: (p) => { renderer.setPaused(!!p); stage.setPaused(!!p); },
+  setStage: (o) => stage.setOptions(o),
   setSimliToken: (t) => { tokenWaiter?.resolve(t); tokenWaiter = null; },
   simliTokenError: (m) => { tokenWaiter?.reject(new Error(m)); tokenWaiter = null; },
 };

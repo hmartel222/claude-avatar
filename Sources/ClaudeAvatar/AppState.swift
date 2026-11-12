@@ -36,6 +36,10 @@ final class AppState: ObservableObject {
     @Published var autoShow: Bool {
         didSet { defaults.set(autoShow, forKey: "autoShow") }
     }
+    /// Video-call look: living-room backdrop, Zoom-style lighting (both follow the time of day), backdrop blur.
+    @Published var roomOn: Bool { didSet { defaults.set(roomOn, forKey: "roomOn"); pushStage() } }
+    @Published var lightOn: Bool { didSet { defaults.set(lightOn, forKey: "lightOn"); pushStage() } }
+    @Published var roomBlur: Double { didSet { defaults.set(roomBlur, forKey: "roomBlur"); pushStage() } }
     @Published var sensitivity: Double {
         didSet { defaults.set(sensitivity, forKey: "sensitivity"); model.eval("window.claudeAvatar?.setSensitivity(\(sensitivity))") }
     }
@@ -92,6 +96,9 @@ final class AppState: ObservableObject {
         let d = UserDefaults.standard
         faceHidden = d.bool(forKey: "faceHidden")
         autoShow = d.object(forKey: "autoShow") as? Bool ?? true
+        roomOn = d.object(forKey: "roomOn") as? Bool ?? true
+        lightOn = d.object(forKey: "lightOn") as? Bool ?? true
+        roomBlur = d.object(forKey: "roomBlur") as? Double ?? 9
         pinned = d.object(forKey: "pinned") as? Bool ?? true
         let s = d.double(forKey: "sensitivity")
         sensitivity = s == 0 ? 1.0 : s
@@ -375,7 +382,10 @@ final class AppState: ObservableObject {
         c.queryItems = [URLQueryItem(name: "embedded", value: "1"),
                         URLQueryItem(name: "renderer", value: renderer == .simli ? "simli" : "talkinghead"),
                         URLQueryItem(name: "avatar", value: avatarID),
-                        URLQueryItem(name: "sens", value: String(sensitivity))]
+                        URLQueryItem(name: "sens", value: String(sensitivity)),
+                        URLQueryItem(name: "room", value: roomOn ? "1" : "0"),
+                        URLQueryItem(name: "light", value: lightOn ? "1" : "0"),
+                        URLQueryItem(name: "blur", value: String(roomBlur))]
         // Test hook: CLAUDE_AVATAR_QUERY="idlefps=8&pr=0.75" appends tuning parameters.
         if let extra = ProcessInfo.processInfo.environment["CLAUDE_AVATAR_QUERY"] {
             c.percentEncodedQuery = (c.percentEncodedQuery ?? "") + "&" + extra
@@ -388,7 +398,12 @@ final class AppState: ObservableObject {
         model.eval("window.claudeAvatar?.setPaused(\(!isVisible || faceHidden))")
     }
 
+    private func pushStage() {
+        model.eval("window.claudeAvatar?.setStage({room: \(roomOn), light: \(lightOn), blur: \(roomBlur)})")
+    }
+
     private func applyPageState() {
+        pushStage()
         model.eval("window.claudeAvatar?.setSensitivity(\(sensitivity))")
         applyPause()
     }

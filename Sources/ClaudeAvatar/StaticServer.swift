@@ -8,12 +8,13 @@ final class StaticServer {
     private let queue = DispatchQueue(label: "claude-avatar.http")
     private var listener: NWListener?
     // Only these top-level entries are exposed.
-    private let allowed: Set<String> = ["index.html", "pcm-player.js", "avatars", "node_modules", "renderers", "vendor"]
+    private let allowed: Set<String> = ["index.html", "pcm-player.js", "stage.js", "backdrops", "avatars", "node_modules", "renderers", "vendor"]
 
     private static let types = [
         "html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8",
         "mjs": "text/javascript; charset=utf-8", "json": "application/json",
         "glb": "model/gltf-binary", "wasm": "application/wasm", "css": "text/css; charset=utf-8",
+        "jpg": "image/jpeg", "png": "image/png", "tflite": "application/octet-stream",
     ]
 
     private let userAvatars: URL

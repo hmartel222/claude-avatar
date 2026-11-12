@@ -246,6 +246,15 @@ struct MenuPanel: View {
                 Slider(value: $app.sensitivity, in: 0.5...2.0)
             } }
 
+            Toggle("Living-room backdrop", isOn: $app.roomOn)
+            if app.roomOn {
+                HStack { Text("Backdrop blur"); Spacer(); Text("\(Int(app.roomBlur))").foregroundStyle(.secondary).monospacedDigit() }
+                Slider(value: $app.roomBlur, in: 0...24, step: 1)
+            }
+            Toggle("Video-call lighting", isOn: $app.lightOn)
+            Text("Both follow your local time: morning, afternoon, evening, night.")
+                .font(.caption).foregroundStyle(.secondary)
+
             Toggle("Always on top", isOn: $app.pinned)
             Toggle("Pop up when Claude speaks", isOn: $app.autoShow)
             Toggle("Launch at login", isOn: Binding(get: { app.launchAtLogin }, set: { app.setLaunchAtLogin($0) }))

@@ -16,10 +16,13 @@ const types = {
   ".bin": "application/octet-stream",
   ".wasm": "application/wasm",
   ".css": "text/css; charset=utf-8",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".tflite": "application/octet-stream",
 };
 
 // Only these top-level entries are served (keeps package.json etc. private).
-const allowed = ["index.html", "pcm-player.js", "avatars", "node_modules", "renderers", "vendor"];
+const allowed = ["index.html", "pcm-player.js", "stage.js", "backdrops", "avatars", "node_modules", "renderers", "vendor"];
 
 http.createServer(async (req, res) => {
   try {

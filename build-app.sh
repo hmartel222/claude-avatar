@@ -34,8 +34,14 @@ cp Resources/App-Info.plist "$APP/Contents/Info.plist"
 # Only what the page needs at runtime (no npm metadata, no Node).
 W="$APP/Contents/Resources/web"
 M=web/node_modules/@met4citizen
-cp web/index.html web/pcm-player.js "$W/"
+cp web/index.html web/pcm-player.js web/stage.js "$W/"
 mkdir -p "$W/renderers" "$W/vendor"
+cp -R web/backdrops "$W/backdrops"
+cp -R web/vendor/mediapipe "$W/vendor/mediapipe"
+MP=web/node_modules/@mediapipe/tasks-vision
+mkdir -p "$W/node_modules/@mediapipe/tasks-vision/wasm"
+cp "$MP/vision_bundle.mjs" "$W/node_modules/@mediapipe/tasks-vision/"
+cp "$MP"/wasm/vision_wasm_internal.* "$W/node_modules/@mediapipe/tasks-vision/wasm/"
 cp web/renderers/simli.js "$W/renderers/"
 cp web/vendor/simli.js "$W/vendor/"
 cp -R web/avatars "$W/avatars"

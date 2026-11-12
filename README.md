@@ -21,6 +21,8 @@ Reopen later with `open ~/Applications/ClaudeAvatar.app`.
 3. The tile pops up by itself when Claude starts speaking and hides after ~25 s of quiet. The app lives in the menu bar and starts at login (both can be turned off in its panel). Show/hide manually with ⌥⌘A.
 4. First launch only: approve **System Audio Recording** in System Settings → Privacy & Security.
 
+**Video-call look:** the avatar sits in a blurred living room with Zoom-style lighting. Both change with your local time (morning, afternoon, evening, night), apply to the 3D face and to Simli, and can be switched off or adjusted in the menu-bar panel. The Simli face is cut out of its video on-device (MediaPipe) so the room can sit behind it. Room photo: CC0, see `web/backdrops/CREDITS.md`.
+
 The optional photoreal Simli renderer needs your own Simli API key, entered in the app and stored in your Keychain.
 
 ## Project layout
