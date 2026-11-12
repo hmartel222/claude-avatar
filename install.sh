@@ -23,5 +23,26 @@ fi
 mkdir -p "$HOME/Applications"
 rm -rf "$HOME/Applications/ClaudeAvatar.app"
 cp -R dist/ClaudeAvatar.app "$HOME/Applications/"
-echo "Installed to ~/Applications/ClaudeAvatar.app"
 open "$HOME/Applications/ClaudeAvatar.app"
+
+cat <<'GUIDE'
+
+  ✅ Claude Avatar is installed and launching.
+
+  HOW TO USE
+    1. Put headphones on (otherwise the mic hears Claude and it interrupts itself).
+    2. Open the Claude desktop app and start voice mode.
+    3. The avatar tile floats on top of your windows; its face moves when Claude speaks.
+    4. First launch: macOS asks for audio capture permission. Click Allow
+       (System Settings > Privacy & Security > Screen & System Audio Recording).
+
+  REOPEN IT LATER
+    open ~/Applications/ClaudeAvatar.app        (or Spotlight: "ClaudeAvatar")
+    Hotkey to show/hide the tile: Option+Command+A
+
+  UPDATE
+    Re-run the same install line.
+
+  Optional: photoreal face via Simli. Add your own Simli API key in the app's settings.
+
+GUIDE
