@@ -3,11 +3,31 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         installEditMenu()
+        installEditKeyMonitor()
         MainActor.assumeIsolated { AppState.shared.launch() }
     }
 }
 
 extension AppDelegate {
+    /// The menu-bar panel doesn't route ⌘-shortcuts through the main menu, so handle the editing keys directly.
+    func installEditKeyMonitor() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection([.command, .option, .control]) == .command,
+                  NSApp.keyWindow?.firstResponder is NSText else { return event }
+            let action: Selector?
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "v": action = #selector(NSText.paste(_:))
+            case "c": action = #selector(NSText.copy(_:))
+            case "x": action = #selector(NSText.cut(_:))
+            case "a": action = #selector(NSText.selectAll(_:))
+            case "z": action = Selector(("undo:"))
+            default: action = nil
+            }
+            if let action, NSApp.sendAction(action, to: nil, from: nil) { return nil }
+            return event
+        }
+    }
+
     /// An accessory (menu-bar) app has no main menu, so ⌘V never reaches text fields. Give it a minimal Edit menu.
     func installEditMenu() {
         let main = NSMenu()

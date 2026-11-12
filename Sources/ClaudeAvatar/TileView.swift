@@ -278,10 +278,15 @@ struct SimliSettings: View {
             } else {
                 HStack {
                     SecureField("Simli API key", text: $keyDraft).textFieldStyle(.roundedBorder)
+                    Button("Paste") { if let t = NSPasteboard.general.string(forType: .string) { keyDraft = t.trimmingCharacters(in: .whitespacesAndNewlines) } }
                     Button("Save") { app.saveSimliKey(keyDraft); keyDraft = "" }.disabled(keyDraft.isEmpty)
                 }
             }
-            TextField("Face ID", text: $app.simliFaceID).textFieldStyle(.roundedBorder).font(.caption)
+            HStack {
+                TextField("Face ID", text: $app.simliFaceID).textFieldStyle(.roundedBorder).font(.caption)
+                Button("Paste") { if let t = NSPasteboard.general.string(forType: .string) { app.simliFaceID = t.trimmingCharacters(in: .whitespacesAndNewlines) } }
+                    .font(.caption)
+            }
             if app.hasSimliKey {
                 HStack {
                     Button("Test connection") { app.testSimliConnection() }.font(.caption)
