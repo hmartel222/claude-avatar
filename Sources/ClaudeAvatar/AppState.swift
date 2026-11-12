@@ -98,7 +98,7 @@ final class AppState: ObservableObject {
         autoShow = d.object(forKey: "autoShow") as? Bool ?? true
         roomOn = d.object(forKey: "roomOn") as? Bool ?? true
         lightOn = d.object(forKey: "lightOn") as? Bool ?? true
-        roomBlur = d.object(forKey: "roomBlur") as? Double ?? 9
+        roomBlur = d.object(forKey: "roomBlur") as? Double ?? 5
         pinned = d.object(forKey: "pinned") as? Bool ?? true
         let s = d.double(forKey: "sensitivity")
         sensitivity = s == 0 ? 1.0 : s

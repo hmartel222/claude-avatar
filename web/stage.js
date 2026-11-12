@@ -62,7 +62,7 @@ export class Stage {
     this.avatar = avatar;
     this.room = params.get("room") !== "0";
     this.light = params.get("light") !== "0";
-    this.blur = params.has("blur") ? parseFloat(params.get("blur")) : 9;
+    this.blur = params.has("blur") ? parseFloat(params.get("blur")) : 5;
     this.hourOverride = params.has("hour") ? parseFloat(params.get("hour")) : null;
     this.head = null;
     this.cutout = null;
