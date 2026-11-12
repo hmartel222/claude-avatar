@@ -18,7 +18,8 @@ else
     echo "Signing identity: $IDENTITY"
 fi
 
-if [ ! -d web/node_modules ]; then (cd web && npm ci --no-audit --no-fund); fi
+# Always sync with the lockfile so updates that add dependencies work on existing clones.
+(cd web && npm ci --no-audit --no-fund)
 
 # Simli's SDK has bare imports; bundle it into one file the page can load.
 (cd web && npx esbuild renderers/simli-entry.js --bundle --format=esm --platform=browser --minify --outfile=vendor/simli.js --log-level=warning)
