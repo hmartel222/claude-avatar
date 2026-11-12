@@ -172,6 +172,9 @@ export class Stage {
   }
 }
 
+// Gaussian feather on the cutout edge, in CSS pixels (3-5 reads soft without halos).
+const FEATHER_PX = 4;
+
 // ---- person cutout for the Simli video ---------------------------------------
 class Cutout {
   constructor(container, video, getProfile) {
@@ -245,7 +248,7 @@ class Cutout {
     g.clearRect(0, 0, W, H);
     g.drawImage(source, cx, cy, cw, ch, 0, 0, W, H);
     g.globalCompositeOperation = "destination-in";
-    g.filter = `blur(${Math.max(1, W / 220).toFixed(1)}px)`;
+    g.filter = `blur(${(FEATHER_PX * dpr).toFixed(1)}px)`;   // feather the cutout edge
     g.drawImage(this.maskCanvas, cx / sw * mw, cy / sh * mh, cw / sw * mw, ch / sh * mh, 0, 0, W, H);
     g.filter = "none";
 
