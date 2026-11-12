@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Avatar</title>
+<style>
+  :root { color-scheme: dark; --bg: #1d1d1f; --fg: #f5f5f7; --dim: #8e8e93; --ok: #30d158; --warn: #ffd60a; --bad: #ff453a; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
+    font: 12px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+  #avatar { position: fixed; inset: 0; }
+  #status { position: fixed; right: 8px; top: 8px; display: flex; align-items: center; gap: 6px;
+    padding: 4px 9px; border-radius: 999px; background: rgba(0,0,0,.55); backdrop-filter: blur(6px); user-select: none; }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  #status[data-s="ok"] #dot { background: var(--ok); }
+  #status[data-s="warn"] #dot { background: var(--warn); }
+  #status[data-s="bad"] #dot { background: var(--bad); }
+  #status[data-speaking="1"] #dot { animation: pulse .6s ease-in-out infinite alternate; }
+  @keyframes pulse { from { transform: scale(1); opacity: 1; } to { transform: scale(1.6); opacity: .5; } }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; color: var(--dim); pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="avatar"></div>
+<div id="loading">Loading avatar…</div>
+<div id="status" data-s="bad" data-speaking="0"><span id="dot"></span><span id="statusText">starting…</span></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "/node_modules/@met4citizen/talkinghead/node_modules/three/build/three.module.js",
+  "three/addons/": "/node_modules/@met4citizen/talkinghead/node_modules/three/examples/jsm/",
+  "talkinghead": "/node_modules/@met4citizen/talkinghead/modules/talkinghead.mjs",
+  "headaudio": "/node_modules/@met4citizen/headaudio/dist/headaudio.min.mjs",
+  "simli": "/vendor/simli.js"
+} }
+</script>
+
+<script type="module">
+const params = new URLSearchParams(location.search);
+const WS_URL = params.get("ws") || "ws://127.0.0.1:8765";
+const AVATAR_URL = params.get("avatar") || "/avatars/mpfb.glb";
+
+const SPEECH_PEAK = 0.002;      // frame peak above this counts as audio (~ -54 dBFS)
+const MOUTH_CLOSE_FRAMES = 2;   // 2 x 20 ms of silence closes the mouth immediately
+const FPS_SPEAKING = parseFloat(params.get("fps")) || 30;
+const FPS_IDLE = parseFloat(params.get("idlefps")) || 15;
+const PIXEL_RATIO = parseFloat(params.get("pr")) || 1;      // multiplies devicePixelRatio
+const DISCONNECT_IDLE = params.get("hadisc") === "1";       // detach HeadAudio while idle (CPU)
+const IDLE_AFTER_MS = 400;      // silence this long switches speaking -> idle
+
+// ---- status badge ---------------------------------------------------------
+const statusEl = document.getElementById("status");
+const statusText = document.getElementById("statusText");
+if (params.has("embedded")) statusEl.style.display = "none";   // the native tile shows its own status dot
+const state = { ws: "connecting", claude: false, audio: "suspended", speaking: false };
+function renderStatus() {
+  let s, text;
+  if (state.ws !== "open") { s = "bad"; text = state.ws === "connecting" ? "connecting to tap…" : "tap offline"; }
+  else if (state.audio !== "running") { s = "warn"; text = "click to enable"; }
+  else if (!state.claude) { s = "idle"; text = "Claude not running"; }
+  else { s = "ok"; text = state.speaking ? "speaking" : "connected"; }
+  statusEl.dataset.s = s;
+  statusEl.dataset.speaking = s === "ok" && state.speaking ? "1" : "0";
+  statusText.textContent = text;
+}
+
+// ---- renderer interface: pushAudio(frame), stop(), setState(idle|speaking) -
+// TalkingHead is the first implementation; swap this class for a photoreal one later.
+class TalkingHeadRenderer {
+  mouthOpen = false; speaking = false; paused = false;
+  silentFrames = 0; lastLoud = 0;
+  sensitivity = Math.max(0.1, Math.min(4, parseFloat(params.get("sens")) || 1));
+
+  latencyMs = 0;                  // face is driven live from the audio; nothing to hold back
+  attach() {}                     // no <video>: renders to a canvas
+
+  async init(container) {
+    const { TalkingHead } = await import("talkinghead");
+    const { HeadAudio } = await import("headaudio");
+    // Own 48 kHz context shared with TalkingHead. Nothing here may be audible.
+    this.ctx = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
+    this.head = new TalkingHead(container, {
+      audioCtx: this.ctx,
+      avatarMute: true,
+      cameraView: "upper",
+      lipsyncModules: ["en"],
+      lipsyncLang: "en",
+      modelFPS: FPS_SPEAKING,
+      modelPixelRatio: PIXEL_RATIO,
+    });
+    // TalkingHead routes its own speech chain to the speakers; we never use it, cut it off.
+    this.head.audioReverbNode.disconnect();
+
+    await this.head.showAvatar({
+      url: AVATAR_URL, body: "F", avatarMood: "neutral", lipsyncLang: "en",
+    });
+
+    await this.ctx.audioWorklet.addModule("/pcm-player.js");
+    await this.ctx.audioWorklet.addModule("/node_modules/@met4citizen/headaudio/dist/headworklet.min.mjs");
+
+    this.player = new AudioWorkletNode(this.ctx, "pcm-player", { numberOfInputs: 0, outputChannelCount: [1] });
+
+    this.headaudio = new HeadAudio(this.ctx, {
+      processorOptions: {},
+      parameterData: { silMode: 0, vadGateActiveDb: -50, vadGateInactiveDb: -60 },
+    });
+    await this.headaudio.loadModel("/node_modules/@met4citizen/headaudio/dist/model-en-mixed.bin");
+
+    // Visemes -> blend shapes, driven from TalkingHead's animation loop.
+    // The mouth is gated by the raw signal: HeadAudio fades visemes out over ~100 ms plus its own
+    // detection latency, so when the audio stops we force every viseme to 0 right away.
+    this.headaudio.onvalue = (key, value) => {
+      const mt = this.head.mtAvatar[key];
+      if (!mt) return;
+      const v = this.mouthOpen ? Math.min(1, value * this.sensitivity) : 0;
+      Object.assign(mt, { newvalue: v, needsUpdate: true });
+    };
+    this.head.opt.update = this.headaudio.update.bind(this.headaudio);
+    this.head.animFrameDur = 1000 / FPS_IDLE;
+
+    // idle <-> speaking with a 400 ms silence timeout
+    setInterval(() => {
+      if (this.speaking && performance.now() - this.lastLoud > IDLE_AFTER_MS) this.setState("idle");
+    }, 50);
+
+    // Analysis path: player -> HeadAudio (real signal).
+    this.player.connect(this.headaudio);
+    // Silent sink: player -> gain 0 -> destination. Keeps the graph pulled while guaranteeing silence.
+    this.mute = this.ctx.createGain();
+    this.mute.gain.value = 0;
+    this.player.connect(this.mute);
+    this.mute.connect(this.ctx.destination);
+  }
+  pushAudio(frame) {
+    let peak = 0;
+    for (let i = 0; i < frame.length; i++) {
+      const a = frame[i] < 0 ? -frame[i] : frame[i];
+      if (a > peak) peak = a;
+    }
+    if (peak >= SPEECH_PEAK) {
+      this.silentFrames = 0;
+      this.lastLoud = performance.now();
+      this.mouthOpen = true;
+      if (!this.speaking) this.setState("speaking");
+    } else if (++this.silentFrames >= MOUTH_CLOSE_FRAMES && this.mouthOpen) {
+      this.closeMouth();
+    }
+    this.player.port.postMessage(frame, [frame.buffer]);
+  }
+  closeMouth() {
+    this.mouthOpen = false;
+    for (const key of this.headaudio.visemeNames) {
+      const mt = this.head.mtAvatar[key];
+      if (mt) Object.assign(mt, { newvalue: 0, needsUpdate: true });
+    }
+  }
+  stop() { this.player?.port.postMessage("clear"); this.headaudio?.resetAll(); this.closeMouth(); this.setState("idle"); }
+  setState(s) {
+    this.speaking = s === "speaking";
+    // Render at 30 fps while speaking, 15 fps while idle (blinks/eye movement stay smooth, CPU drops).
+    this.head.animFrameDur = 1000 / (this.speaking ? FPS_SPEAKING : FPS_IDLE);
+    if (DISCONNECT_IDLE && this.headaudio) {
+      try { this.speaking ? this.player.connect(this.headaudio) : this.player.disconnect(this.headaudio); } catch {}
+    }
+    this.onSpeaking?.(this.speaking);
+  }
+  setSensitivity(x) { this.sensitivity = Math.max(0.1, Math.min(4, x)); }
+  /** Pause rendering + audio analysis while the tile is hidden (saves CPU). */
+  setPaused(p) {
+    this.paused = p;
+    if (p) { this.closeMouth(); this.head.stop(); }
+    else { this.player.port.postMessage("clear"); this.head.start(); }
+  }
+  resume() { return this.paused ? Promise.resolve() : this.ctx.resume(); }
+  sync() { post("sync", { renderer: "talkinghead", state: "ready", latencyMs: 0 }); }
+}
+
+const post = (name, body) => window.webkit?.messageHandlers?.[name]?.postMessage(body);
+
+// ---- boot -----------------------------------------------------------------
+// Renderer picked by the native shell: ?renderer=talkinghead (default) | simli
+let tokenWaiter = null;
+let renderer;
+if (params.get("renderer") === "simli") {
+  const { SimliRenderer } = await import("/renderers/simli.js");
+  renderer = new SimliRenderer({
+    onSync: (s) => post("sync", s),
+    requestToken: () => new Promise((resolve, reject) => { tokenWaiter = { resolve, reject }; post("needToken", 1); }),
+  });
+} else {
+  renderer = new TalkingHeadRenderer();
+}
+renderer.onSpeaking = (v) => { state.speaking = v; renderStatus(); };
+renderStatus();
+
+try {
+  await renderer.init(document.getElementById("avatar"));
+  document.getElementById("loading").remove();
+} catch (e) {
+  console.error(e);
+  document.getElementById("loading").textContent = "Failed to load avatar: " + (e?.message || e);
+  throw e;
+}
+
+// Hooks for the native shell (WKWebView).
+window.claudeAvatar = {
+  setSensitivity: (x) => renderer.setSensitivity(x),
+  setPaused: (p) => renderer.setPaused(!!p),
+  setSimliToken: (t) => { tokenWaiter?.resolve(t); tokenWaiter = null; },
+  simliTokenError: (m) => { tokenWaiter?.reject(new Error(m)); tokenWaiter = null; },
+};
+
+post("ready", 1);   // tell the native shell the hooks exist
+renderer.sync?.();
+
+function syncAudioState() { state.audio = renderer.ctx ? renderer.ctx.state : "running"; renderStatus(); }
+if (renderer.ctx) renderer.ctx.onstatechange = syncAudioState;
+const tryResume = () => Promise.resolve(renderer.resume?.()).then(syncAudioState, () => {});
+for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, tryResume);
+tryResume();
+syncAudioState();
+
+// ---- WebSocket ------------------------------------------------------------
+let ws, retry = 0;
+function connect() {
+  state.ws = "connecting"; renderStatus();
+  ws = new WebSocket(WS_URL);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => { retry = 0; state.ws = "open"; renderer.stop(); renderStatus(); };
+  ws.onmessage = (e) => {
+    if (typeof e.data === "string") {
+      try {
+        const m = JSON.parse(e.data);
+        if (m.type === "status") { state.claude = !!m.claudeRunning; renderStatus(); }
+        else if (m.type === "interrupt") renderer.stop();   // Claude was cut off: drop buffered audio/video at once
+      } catch {}
+    } else {
+      renderer.pushAudio(new Float32Array(e.data));
+    }
+  };
+  ws.onclose = () => {
+    state.ws = "closed"; state.claude = false; renderer.stop(); renderStatus();
+    setTimeout(connect, Math.min(1000 * 2 ** retry++, 3000));
+  };
+  ws.onerror = () => ws.close();
+}
+connect();
+</script>
+</body>
+</html>

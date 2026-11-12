@@ -1,0 +1,16 @@
+{
+  "name": "claude-avatar-web",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@met4citizen/headaudio": "^1.0.0",
+    "@met4citizen/talkinghead": "^1.8.2",
+    "simli-client": "^3.2.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}
